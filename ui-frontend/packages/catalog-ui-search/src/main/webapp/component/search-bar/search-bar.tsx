@@ -41,10 +41,10 @@ type Props = {
   inputPlaceholder: string
   onChange: (event: any) => void
   onSubmit: (event: any) => void
-  searcherror: boolean
+  error: boolean
   errorMessage: TextFieldProps['helperText']
   options: any
-  searchloading: boolean
+  loading: boolean
 }
 
 const useStyles = makeStyles(() => ({
@@ -73,9 +73,9 @@ const SearchBar = (props: Props) => {
 
   const optionToValue = (option: any) => option.token
 
-  let helpText = props.searcherror ? props.errorMessage : 'Valid'
+  let helpText = props.error ? props.errorMessage : 'Valid'
 
-  let indicator = props.searcherror ? (
+  let indicator = props.error ? (
     <Close style={{ color: red[500] }} />
   ) : (
     <Check style={{ color: green[500] }} />
@@ -279,13 +279,13 @@ const SearchBar = (props: Props) => {
                 }
               }}
               autoFocus
-              helperText={props.searcherror ? <>{props.errorMessage}</> : ''}
+              helperText={props.error ? <>{props.errorMessage}</> : ''}
               InputProps={{
                 ...params.InputProps,
                 type: 'search',
                 startAdornment: (
                   <React.Fragment>
-                    {props.searchloading ? (
+                    {props.loading ? (
                       <CircularProgress
                         size={20}
                         style={{ marginRight: 13, marginLeft: 2 }}
