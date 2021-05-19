@@ -29,11 +29,12 @@ const METADATA_CONTENT_TYPE = 'metadata-content-type'
 import TextField from '@material-ui/core/TextField'
 import FormControlLabel from '@material-ui/core/FormControlLabel'
 import Checkbox from '@material-ui/core/Checkbox'
+import Button from '@material-ui/core/Button'
+import { useState } from 'react'
 import {
   FilterBuilderClass,
   FilterClass,
 } from '../filter-builder/filter.structure'
-import Typography from '@material-ui/core/Typography'
 import { useBackbone } from '../selection-checkbox/useBackbone.hook'
 import FilterInput from '../../react-component/filter/filter-input'
 import Swath from '../swath/swath'
@@ -41,6 +42,12 @@ import Grid from '@material-ui/core/Grid'
 import Chip from '@material-ui/core/Chip'
 import Autocomplete from '@material-ui/lab/Autocomplete'
 import TypedMetacardDefs from '../tabs/metacard/metacardDefinitions'
+import SearchBar from '../search-bar/search-bar'
+import styled from 'styled-components'
+import useSnack from '../hooks/useSnack'
+import { COMMANDS } from '../fetch/fetch'
+import { CLOSEABLE_ERROR, CLOSEABLE_INFO } from '../snack/snack-props-presets'
+
 
 function isNested(filter: any) {
   let nested = false
@@ -267,10 +274,130 @@ function getFilterTree(model: any) {
   return cql.simplify(cql.read(model.get('cql')))
 }
 
-type QueryBasicProps = {
-  model: any
+type BooleanEndpointReturnType = {
+  cql?: string
+  message?: string
 }
 
+const getCqlFromSearchText = async ({
+  searchText,
+  signal,
+}: {
+  searchText: string | null
+  signal?: AbortSignal
+}) => {
+  let trimmedInput = searchText!.trim()
+
+  if (trimmedInput) {
+    const res = await COMMANDS.FETCH(
+      `/search/catalog/internal/isri/boolean-search/cql?q=${encodeURIComponent(
+        trimmedInput!
+      )}`,
+      {
+        signal,
+      }
+    )
+
+    const json = (await res.json()) as BooleanEndpointReturnType
+    if (json.message) {
+      return null // something went wrong, bail early
+    }
+    if (json.cql) {
+      return json.cql
+    }
+    return null
+  }
+  return ''
+}
+
+const updateSearchTextCql = async ({
+  setSearchTextCql,
+  searchText,
+  setLoading,
+  signal,
+}: {
+  setSearchTextCql: React.Dispatch<React.SetStateAction<string | null>>
+  searchText: string | null
+  setLoading: React.Dispatch<React.SetStateAction<boolean>>
+  signal: AbortSignal
+}) => {
+  const value = await getCqlFromSearchText({ searchText, signal })
+  setSearchTextCql(value)
+  setLoading(false)
+}
+
+const useSearchTextCql = ({ searchText }: { searchText: string | null }) => {
+  const [searchTextCql, setSearchTextCql] = useState('' as string | null)
+  const [loading, setLoading] = React.useState(false)
+
+  React.useEffect(() => {
+    setLoading(false)
+    const abortController = new AbortController()
+    setLoading(true)
+    updateSearchTextCql({
+      setSearchTextCql,
+      searchText,
+      setLoading,
+      signal: abortController.signal,
+    })
+
+    return () => {
+      abortController.abort()
+    }
+  }, [searchText])
+  return {
+    searchTextCql,
+    loading,
+  }
+}
+
+const ERROR_MESSAGES = {
+  punctuation: (
+    <div>
+      Invalid Query:
+      <div>
+        If using characters outside the alphabet (a-z), make sure to quote them
+        like so ("big.doc" or "bill's car").
+      </div>
+    </div>
+  ),
+  syntax: (
+    <div>
+      Invalid Query:
+      <div>Check that syntax of AND / OR / NOT is used correctly.</div>
+    </div>
+  ),
+  both: (
+    <div>
+      Invalid Query:
+      <div>
+        If using characters outside the alphabet (a-z), make sure to quote them
+        like so ("big.doc" or "bill's car").
+      </div>
+      <div>Check that syntax of AND / OR / NOT is used correctly.</div>
+    </div>
+  ),
+}
+type QueryBasicProps = {
+  model: any
+  inputPlaceholder: string
+  searchButtonText: string
+  createSearch: (queryModel: any) => void
+  serialize: any
+  metacardDefinitions: any
+  createAdvancedSearch: (queryModel: any) => void
+}
+
+const SearchBarContainer = styled.div`
+  display: flex;
+  flex-grow: 1;
+  .MuiInputBase-input {
+    border: none !important;
+  }
+  .MuiInputBase-input:focus {
+    border: none !important;
+  }
+`
 const constructFilterFromBasicFilter = ({
   basicFilter,
 }: {
@@ -348,16 +475,30 @@ const constructFilterFromBasicFilter = ({
   })
 }
 
-const QueryBasic = ({ model }: QueryBasicProps) => {
+const [searchText, setSearchText] = useState<string | null>(null)
+const isLoading = useState(false)
+const { searchTextCql, loading: searchTextCqlLoading } = useSearchTextCql({
+  searchText,
+})
+const error = useState(false)
+const options = useState([])
+
+const QueryBasic = (props : QueryBasicProps) => {
   const inputRef = React.useRef<HTMLDivElement>()
   const [basicFilter, setBasicFilter] = React.useState(
-    translateFilterToBasicMap(getFilterTree(model)).propertyValueMap
+    translateFilterToBasicMap(getFilterTree(props.model)).propertyValueMap
   )
   const [typeAttributes] = React.useState(
     getAllValidValuesForMatchTypeAttribute()
   )
 
   const { listenTo, stopListening } = useBackbone()
+  const addSnack = useSnack()
+  const { createSearch } = props
+
+  function handleSearchClick(queryModel: any) {
+    createSearch(queryModel)
+  }
   /**
    * Because of how things render, auto focusing to the input is more complicated than I wish.  This ensures it works everytime, whereas autoFocus prop is unreliable
    */
@@ -374,52 +515,92 @@ const QueryBasic = ({ model }: QueryBasicProps) => {
   React.useEffect(() => {
     const callback = () => {
       setBasicFilter(
-        translateFilterToBasicMap(getFilterTree(model)).propertyValueMap
+        translateFilterToBasicMap(getFilterTree(props.model)).propertyValueMap
       )
     }
-    listenTo(model, 'change:filterTree', callback)
+    listenTo(props.model, 'change:filterTree', callback)
     return () => {
-      stopListening(model, 'change:filterTree', callback)
+      stopListening(props.model, 'change:filterTree', callback)
     }
-  }, [model])
+  }, [props.model])
   return (
     <>
       <div className="editor-properties px-2 py-3">
-        <div className="">
-          <Typography className="pb-2">Keyword</Typography>
-          <TextField
-            fullWidth
-            value={basicFilter.anyText ? basicFilter.anyText[0].value : ''}
-            placeholder={`Text to search for. Use "*" for wildcard.`}
-            id="Text"
-            onChange={(e) => {
-              basicFilter.anyText[0] = new FilterClass({
-                ...basicFilter.anyText[0],
-                value: e.target.value,
-              })
-              model.set(
-                'filterTree',
-                constructFilterFromBasicFilter({ basicFilter })
-              )
-            }}
-            onKeyUp={(e) => {
-              if (e.which === 13) {
-                model.startSearchFromFirstPage()
-              }
-            }}
-            inputProps={{
-              ref: inputRef as any,
-            }}
-            size="small"
-            variant="outlined"
-          />
-        </div>
+      <SearchBarContainer>
+          <Grid container justify="center" alignItems="flex-start">
+            <Grid item xs={1} />
+            <Grid item xs={9}>
+              <SearchBar
+                key={props.searchButtonText}
+                inputPlaceholder={'*'}
+                searchButtonText={props.searchButtonText}
+                onChange={(value) => setSearchText(value)}
+                onSubmit={async () => {
+                  if (isLoading || searchTextCqlLoading) {
+                    addSnack(
+                      'Still processing input, please wait and resubmit when loading is finished.',
+                      CLOSEABLE_INFO
+                    )
+                    return
+                  }
+                  if (error) {
+                    // @ts-ignore
+                    addSnack(ERROR_MESSAGES.syntax, CLOSEABLE_ERROR)
+                  } else {
+                    const filterTree = getFilterTree({ searchTextCql })
+                    if (filterTree) {
+                      handleSearchClick({ filterTree })
+                    } else {
+                      // @ts-ignore
+                      addSnack(ERROR_MESSAGES.punctuation, CLOSEABLE_ERROR)
+                    }
+                  }
+                }}
+                error={error || searchTextCql === null}
+                errorMessage={(() => {
+                  if (error) {
+                    return ERROR_MESSAGES.both
+                  }
+                  return ERROR_MESSAGES.punctuation
+                })()}
+                options={options}
+                loading={isLoading || searchTextCqlLoading}
+              />
+            </Grid>
+            <Grid item xs={2}>
+              <Button
+                data-id="advanced-button"
+                onClick={async () => {
+                  if (isLoading || searchTextCqlLoading) {
+                    addSnack(
+                      'Still processing input, please wait and resubmit when loading is finished.',
+                      CLOSEABLE_INFO
+                    )
+                    return
+                  }
+                  const filterTree = getFilterTree({ searchTextCql })
+                  if (filterTree) {
+                    props.createAdvancedSearch({ filterTree })
+                  } else {
+                    // @ts-ignore
+                    addSnack(ERROR_MESSAGES.punctuation, CLOSEABLE_ERROR)
+                  }
+                }}
+                color="primary"
+                className="m-2 p-2"
+                style={{ height: '43px' }}
+              >
+                Advanced
+              </Button>
+            </Grid>
+          </Grid>
+        </SearchBarContainer>
         <div className="pt-2">
           <QueryTimeReactView
             value={basicFilter.anyDate[0]}
             onChange={(newValue) => {
               basicFilter.anyDate[0] = newValue
-              model.set(
+              props.model.set(
                 'filterTree',
                 constructFilterFromBasicFilter({ basicFilter })
               )
@@ -445,7 +626,7 @@ const QueryBasic = ({ model }: QueryBasicProps) => {
                       })
                     )
                   }
-                  model.set(
+                  props.model.set(
                     'filterTree',
                     constructFilterFromBasicFilter({ basicFilter })
                   )
@@ -475,7 +656,7 @@ const QueryBasic = ({ model }: QueryBasicProps) => {
                   }
                   setFilter={(val: any) => {
                     basicFilter.anyGeo[0] = val
-                    model.set(
+                    props.model.set(
                       'filterTree',
                       constructFilterFromBasicFilter({ basicFilter })
                     )
@@ -494,7 +675,7 @@ const QueryBasic = ({ model }: QueryBasicProps) => {
                 checked={basicFilter.anyType.on}
                 onChange={(e) => {
                   basicFilter.anyType.on = e.target.checked
-                  model.set(
+                  props.model.set(
                     'filterTree',
                     constructFilterFromBasicFilter({ basicFilter })
                   )
@@ -529,7 +710,7 @@ const QueryBasic = ({ model }: QueryBasicProps) => {
                     basicFilter.anyType.properties = newValue.map(
                       (val) => val.value
                     )
-                    model.set(
+                    props.model.set(
                       'filterTree',
                       constructFilterFromBasicFilter({ basicFilter })
                     )
@@ -579,7 +760,7 @@ const QueryBasic = ({ model }: QueryBasicProps) => {
           <Swath className="w-full h-1" />
         </div>
         <div className="basic-settings">
-          <QuerySettings model={model} />
+          <QuerySettings model={props.model} />
         </div>
       </div>
     </>
