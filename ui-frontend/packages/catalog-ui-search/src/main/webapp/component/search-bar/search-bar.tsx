@@ -20,7 +20,7 @@ import styled from 'styled-components'
 import { Suggestion } from '../types/graphql'
 import Paper from '@material-ui/core/Paper'
 import { Elevations } from '../theme/theme'
-const properties = require('catalog-ui-search/src/main/webapp/js/properties.js')
+const properties = require('../webapp/js/properties.js')
 
 const defaultFilterOptions = createFilterOptions()
 

@@ -26,6 +26,7 @@ import QueryTimeReactView, {
 } from '../query-time/query-time.view'
 
 const METADATA_CONTENT_TYPE = 'metadata-content-type'
+const searchButtonText = 'Search'
 import TextField from '@material-ui/core/TextField'
 import FormControlLabel from '@material-ui/core/FormControlLabel'
 import Checkbox from '@material-ui/core/Checkbox'
@@ -34,6 +35,7 @@ import { useState } from 'react'
 import {
   FilterBuilderClass,
   FilterClass,
+  isFilterBuilderClass,
 } from '../filter-builder/filter.structure'
 import { useBackbone } from '../selection-checkbox/useBackbone.hook'
 import FilterInput from '../../react-component/filter/filter-input'
@@ -47,7 +49,7 @@ import styled from 'styled-components'
 import useSnack from '../hooks/useSnack'
 import { COMMANDS } from '../fetch/fetch'
 import { CLOSEABLE_ERROR, CLOSEABLE_INFO } from '../snack/snack-props-presets'
-
+import { useHistory } from 'react-router-dom'
 
 function isNested(filter: any) {
   let nested = false
@@ -380,12 +382,54 @@ const ERROR_MESSAGES = {
 }
 type QueryBasicProps = {
   model: any
-  inputPlaceholder: string
-  searchButtonText: string
-  createSearch: (queryModel: any) => void
-  serialize: any
-  metacardDefinitions: any
-  createAdvancedSearch: (queryModel: any) => void
+}
+
+const createSearch = ({ filterTree }: { filterTree: FilterBuilderClass }) => {
+  routeToSearch({
+    filterTree,
+    type: determineTypeFromFilterTree({ filterTree }),
+  })
+}
+
+const createAdvancedSearch = ({
+  filterTree,
+}: {
+  filterTree: FilterBuilderClass
+}) => {
+  const strippedModel = {
+    filterTree,
+    type: 'advanced',
+  }
+
+  routeToSearch(strippedModel, 'advanced')
+}
+const history = useHistory()
+const routeToSearch = (strippedModel: any, method?: string) => {
+  const encodedQueryModel = encodeURIComponent(JSON.stringify(strippedModel))
+  let route = `search/adhoc?defaultQuery=${encodedQueryModel}`
+
+  // the method used to launch the search from another page
+  if (method) {
+    route += `&method=${method}`
+  }
+
+  history.push(route)
+}
+
+const determineTypeFromFilterTree = ({
+  filterTree,
+}: {
+  filterTree: FilterBuilderClass
+}) => {
+  if (
+    filterTree.filters.length === 1 &&
+    !isFilterBuilderClass(filterTree.filters[0]) &&
+    filterTree.filters[0].property === 'anyText'
+  ) {
+    return 'basic'
+  } else {
+    return 'advanced'
+  }
 }
 
 const SearchBarContainer = styled.div`
@@ -476,14 +520,14 @@ const constructFilterFromBasicFilter = ({
 }
 
 const [searchText, setSearchText] = useState<string | null>(null)
-const isLoading = useState(false)
+const [isLoading] = useState(false)
 const { searchTextCql, loading: searchTextCqlLoading } = useSearchTextCql({
   searchText,
 })
-const error = useState(false)
+const [error] = useState(false)
 const options = useState([])
 
-const QueryBasic = (props : QueryBasicProps) => {
+const QueryBasic = (props: QueryBasicProps) => {
   const inputRef = React.useRef<HTMLDivElement>()
   const [basicFilter, setBasicFilter] = React.useState(
     translateFilterToBasicMap(getFilterTree(props.model)).propertyValueMap
@@ -494,8 +538,6 @@ const QueryBasic = (props : QueryBasicProps) => {
 
   const { listenTo, stopListening } = useBackbone()
   const addSnack = useSnack()
-  const { createSearch } = props
-
   function handleSearchClick(queryModel: any) {
     createSearch(queryModel)
   }
@@ -526,14 +568,14 @@ const QueryBasic = (props : QueryBasicProps) => {
   return (
     <>
       <div className="editor-properties px-2 py-3">
-      <SearchBarContainer>
+        <SearchBarContainer>
           <Grid container justify="center" alignItems="flex-start">
             <Grid item xs={1} />
             <Grid item xs={9}>
               <SearchBar
-                key={props.searchButtonText}
+                key={searchButtonText}
                 inputPlaceholder={'*'}
-                searchButtonText={props.searchButtonText}
+                searchButtonText={searchButtonText}
                 onChange={(value) => setSearchText(value)}
                 onSubmit={async () => {
                   if (isLoading || searchTextCqlLoading) {
@@ -580,7 +622,7 @@ const QueryBasic = (props : QueryBasicProps) => {
                   }
                   const filterTree = getFilterTree({ searchTextCql })
                   if (filterTree) {
-                    props.createAdvancedSearch({ filterTree })
+                    createAdvancedSearch({ filterTree })
                   } else {
                     // @ts-ignore
                     addSnack(ERROR_MESSAGES.punctuation, CLOSEABLE_ERROR)
