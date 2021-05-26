@@ -403,8 +403,9 @@ const createAdvancedSearch = ({
 
   routeToSearch(strippedModel, 'advanced')
 }
-const history = useHistory()
+
 const routeToSearch = (strippedModel: any, method?: string) => {
+  const history = useHistory()
   const encodedQueryModel = encodeURIComponent(JSON.stringify(strippedModel))
   let route = `search/adhoc?defaultQuery=${encodedQueryModel}`
 
