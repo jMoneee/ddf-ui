@@ -383,40 +383,6 @@ const ERROR_MESSAGES = {
 type QueryBasicProps = {
   model: any
 }
-
-const createSearch = ({ filterTree }: { filterTree: FilterBuilderClass }) => {
-  routeToSearch({
-    filterTree,
-    type: determineTypeFromFilterTree({ filterTree }),
-  })
-}
-
-const createAdvancedSearch = ({
-  filterTree,
-}: {
-  filterTree: FilterBuilderClass
-}) => {
-  const strippedModel = {
-    filterTree,
-    type: 'advanced',
-  }
-
-  routeToSearch(strippedModel, 'advanced')
-}
-
-const routeToSearch = (strippedModel: any, method?: string) => {
-  const history = useHistory()
-  const encodedQueryModel = encodeURIComponent(JSON.stringify(strippedModel))
-  let route = `search/adhoc?defaultQuery=${encodedQueryModel}`
-
-  // the method used to launch the search from another page
-  if (method) {
-    route += `&method=${method}`
-  }
-
-  history.push(route)
-}
-
 const determineTypeFromFilterTree = ({
   filterTree,
 }: {
@@ -529,6 +495,39 @@ const [error] = useState(false)
 const options = useState([])
 
 const QueryBasic = (props: QueryBasicProps) => {
+  const routeToSearch = (strippedModel: any, method?: string) => {
+    const history = useHistory()
+    const encodedQueryModel = encodeURIComponent(JSON.stringify(strippedModel))
+    let route = `search/adhoc?defaultQuery=${encodedQueryModel}`
+
+    // the method used to launch the search from another page
+    if (method) {
+      route += `&method=${method}`
+    }
+
+    history.push(route)
+  }
+
+  const createAdvancedSearch = ({
+    filterTree,
+  }: {
+    filterTree: FilterBuilderClass
+  }) => {
+    const strippedModel = {
+      filterTree,
+      type: 'advanced',
+    }
+
+    routeToSearch(strippedModel, 'advanced')
+  }
+
+  const createSearch = ({ filterTree }: { filterTree: FilterBuilderClass }) => {
+    routeToSearch({
+      filterTree,
+      type: determineTypeFromFilterTree({ filterTree }),
+    })
+  }
+
   const inputRef = React.useRef<HTMLDivElement>()
   const [basicFilter, setBasicFilter] = React.useState(
     translateFilterToBasicMap(getFilterTree(props.model)).propertyValueMap
